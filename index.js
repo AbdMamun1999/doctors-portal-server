@@ -13,13 +13,17 @@ app.use(express.json());
 
 function verifYJWT(req, res, next) {
     const authHeader = req.headers.authorization;
+    console.log('authheader',authHeader)
     if (!authHeader) {
         return res.status(401).send({ message: 'Unauthorized access' })
     }
     const token = authHeader.split(' ')[1];
+    console.log(token)
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
+            console.log(err)
             return res.status(403).send({ message: 'Forbiden access' })
+            
         }
         req.decoded = decoded;
         next()
@@ -47,20 +51,20 @@ async function run() {
 
         })
 
-        app.get('/user', verifYJWT, async (req, res) => {
-            const users = await userCollection.find().toArray()
-            res.send(users)
-        })
+        app.get('/user', async (req, res) => {
+            const users = await userCollection.find().toArray();
+            res.send(users);
+        });
 
 
-        app.get('/admin/:email',async(req,res)=>{
+        app.get('/admin/:email', async (req, res) => {
             const email = req.params.email;
-            const user = await userCollection.findOne({email:email})
-            const isAdmin = user.role === 'admin'
-            res.send({admin})
+            const user = await userCollection.findOne({ email: email });
+            const isAdmin = user?.role === 'admin';
+            res.send({ admin: isAdmin })
         })
 
-        app.put('/user/admin/:email',verifYJWT, async (req, res) => {
+        app.put('/user/admin/:email', verifYJWT, async (req, res) => {
             const email = req.params.email
             const requester = req.decoded.email;
             const requesterAccount = await userCollection.findOne({ email: requester })
@@ -69,14 +73,15 @@ async function run() {
                 const updateDoc = {
                     $set: { role: 'admin' }
                 };
-                console.log(updateDoc)
                 const result = await userCollection.updateOne(filter, updateDoc);
                 res.send(result)
-            }else{
-                res.status(403).send({message:'forbiden'})
+            } else {
+                res.status(403).send({ message: 'forbiden' })
             }
 
         })
+
+
         app.put('/user/:email', async (req, res) => {
             const email = req.params.email
             const filter = { email: email }

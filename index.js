@@ -3,6 +3,8 @@ const cors = require('cors');
 var jwt = require('jsonwebtoken');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const nodemailer = require('nodemailer');
+const mg = require('nodemailer-mailgun-transport');
 
 const app = express()
 const port = process.env.PORT || 5000;
@@ -13,21 +15,63 @@ app.use(express.json());
 
 function verifYJWT(req, res, next) {
     const authHeader = req.headers.authorization;
-    console.log('authheader',authHeader)
+    console.log('authheader', authHeader)
     if (!authHeader) {
         return res.status(401).send({ message: 'Unauthorized access' })
     }
     const token = authHeader.split(' ')[1];
-    console.log(token)
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
             console.log(err)
             return res.status(403).send({ message: 'Forbiden access' })
-            
+
         }
         req.decoded = decoded;
         next()
     });
+}
+
+const auth = {
+    auth: {
+        api_key: 'f23f3049b59fa15be192b03d7a10b03e-27a562f9-af1cac9a',
+        domain: 'sandboxe9e07821d0d141de8253ee5cb65004c3.mailgun.org'
+    }
+}
+
+const nodemailerMailgun = nodemailer.createTransport(mg(auth));
+
+function sendAppointmentEmail(booking) {
+    const { patient, patientName, treatment, date, slot } = booking;
+
+    const email = {
+        from: 'mamunrox199@gmail.com',
+        to: patient,
+        subject: `Your Appointment for ${treatment} is on ${date} at ${slot} is Confirmed`,
+        text: `Your Appointment for ${treatment} is on ${date} at ${slot} is Confirmed`,
+        html: `
+            <div>
+                <p>Hello ${patientName},</p>
+                <h3>Your Appointment for ${treatment} is confirmed</h3>
+                <p>Looking forward to seeing you on ${date} at ${slot} is confirmed</p>
+
+                <h3>Our Address</h3>
+                <p>Andor Killa Bandorban</p>
+                <p>Bangladesh</p>
+                <a href="https://web.programming-hero.com/"></a>
+            </div>
+        `
+    }
+
+    nodemailerMailgun.sendMail(email, (err, info) => {
+        console.log(email,'email')
+        if (err) {
+            console.log(err,'error is mailgun');
+        }
+        else {
+            console.log(info);
+        }
+    });
+
 }
 
 
@@ -45,7 +89,7 @@ async function run() {
         // get services
         app.get('/services', async (req, res) => {
             const query = {};
-            const cursor = serviceCollection.find(query);
+            const cursor = serviceCollection.find(query).project({ name: 1 });
             const services = await cursor.toArray();
             res.send(services)
 
@@ -67,6 +111,7 @@ async function run() {
         app.put('/user/admin/:email', verifYJWT, async (req, res) => {
             const email = req.params.email
             const requester = req.decoded.email;
+            console.log('requester email', email, requester)
             const requesterAccount = await userCollection.findOne({ email: requester })
             if (requesterAccount.role === 'admin') {
                 const filter = { email: email }
@@ -90,7 +135,6 @@ async function run() {
             const updateDoc = {
                 $set: user
             };
-            console.log(updateDoc)
             const result = await userCollection.updateOne(filter, updateDoc, options);
             const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d' })
             res.send({ result, token })
@@ -138,8 +182,10 @@ async function run() {
 
         app.get('/booking', verifYJWT, async (req, res) => {
             const patient = req.query.patient;
-            const docodedEmail = req.decoded.email;
-            if (patient === docodedEmail) {
+            console.log('paient', patient)
+            const decodedEmail = req.decoded.email;
+            console.log('decoded', decodedEmail)
+            if (patient === decodedEmail) {
                 const query = { patient: patient };
                 const bookings = await bookingCollection.find(query).toArray();
                 res.send(bookings);
@@ -150,13 +196,17 @@ async function run() {
 
         app.post('/booking', async (req, res) => {
             const booking = req.body;
-            const query = { treatment: booking.treatment, date: booking.date, patient: booking.patient }
+            const query = {
+                treatment: booking.treatment,
+                date: booking.date,
+                patient: booking.patient
+            }
             const exists = await bookingCollection.findOne(query)
-            console.log(exists)
             if (exists) {
                 return res.send({ success: false, booking: exists })
             }
             const result = bookingCollection.insertOne(booking)
+            sendAppointmentEmail(booking);
             return res.send({ success: true, result })
         })
 
